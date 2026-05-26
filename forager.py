@@ -393,24 +393,32 @@ def run_daemon(interval_min: int = 30):
         time.sleep(interval_min * 60)
 
 
-def cmd_forage(scorer: Scorer):
-    """完整觅食循环: scan → score → solve 建议"""
+def cmd_forage(scorer: Scorer, auto_deliver: bool = False, dry_run: bool = False):
+    """完整觅食循环: scan → score → solve → deliver (v2: 实际执行闭环)
+
+    Args:
+        auto_deliver: True=对 top1 执行 solve→deliver (不加为展示模式)
+        dry_run: True=跳过实际 PR 提交, 只生成代码
+    """
+    from solver.engine import SolverEngine
+    from deliverer import PRDeliverer
+
     console.print(Panel("[bold green]Forager — 觅食循环[/]"))
     db = get_db()
     tracker = EarningTracker()
 
     # 1. Scan
-    console.print("\n[bold]1. 扫描赏金...[/]")
+    console.print("\n[bold cyan]1. 扫描赏金...[/]")
     agg = BountyAggregator()
     bounties = agg.scan_top(n=20)
     console.print(f"   发现 {len(bounties)} 个赏金")
 
     # 2. Score + filter
-    console.print("\n[bold]2. 评分筛选...[/]")
+    console.print("\n[bold cyan]2. 评分筛选...[/]")
     candidates = []
     for b in bounties:
         s = scorer.score(b.title, b.body, competitors=b.competitors)
-        if s.total >= 6.0 and s.solvability >= 5:
+        if s.total >= 5.0:
             candidates.append((b, s))
             tracker.record_found({
                 "id": b.id, "issue_url": b.issue_url, "title": b.title,
@@ -418,21 +426,100 @@ def cmd_forage(scorer: Scorer):
                 "currency": b.currency,
             })
     candidates.sort(key=lambda x: x[0].risk_adjusted_value, reverse=True)
-    console.print(f"   过滤后 {len(candidates)} 个候选")
+    console.print(f"   过滤后 [bold]{len(candidates)}[/] 个候选")
 
-    # 3. Show top
-    console.print(f"\n[bold]3. Top 5 推荐:[/]\n")
+    if not candidates:
+        console.print("[dim]无高分候选, 退出[/]")
+        return
+
+    # 3. Show top 5 always
+    console.print(f"\n[bold cyan]3. Top 5 推荐:[/]\n")
     for i, (b, s) in enumerate(candidates[:5]):
         console.print(
-            f"  [{s.total:.0f}/10] [cyan]{b.title[:70]}[/]\n"
-            f"         {b.source} | ${b.amount_usd:.0f} {b.currency} | "
-            f"{b.competitors} 竞争者 | {s.risk_level} 风险\n"
-            f"         {b.issue_url}\n"
+            f"  [#{i+1}] [{s.total:.0f}/10] [cyan]{b.title[:70]}[/]\n"
+            f"       {b.source} | ${b.amount_usd:.0f} {b.currency} | "
+            f"{b.competitors} 竞争者 | {s.risk_level} 风险 | {s.price_hint}\n"
+            f"       {b.issue_url}\n"
         )
 
-    # 4. Earnings dashboard
-    console.print(f"\n[bold]4. 收益仪表盘:[/]")
+    # 4. Solve + Deliver (when auto_deliver is on)
+    if auto_deliver:
+        top_b, top_s = candidates[0]
+        console.print(f"\n[bold cyan]4. 执行 Solve → Deliver[/]")
+        console.print(f"   目标: [cyan]{top_b.title[:70]}[/]")
+        console.print(f"   赏金: ${top_b.amount_usd:.0f} {top_b.currency} | "
+                      f"来源: {top_b.source}")
+
+        # Solve
+        console.print(f"\n   [bold yellow]→ Solve[/] 生成代码中...")
+        engine = SolverEngine()
+        try:
+            solution = engine.solve(
+                title=top_b.title,
+                body=top_b.body or top_b.title,
+                repo=top_b.repo,
+                issue_url=top_b.issue_url,
+                bounty_amount_usd=top_b.amount_usd,
+            )
+
+            if solution.error:
+                console.print(f"   [red]✗ Solve 失败: {solution.error}[/]")
+                tracker.mark_lost(top_b.id, f"solve error: {solution.error}")
+            elif not solution.file_changes:
+                console.print(f"   [red]✗ Solve 无产出 (file_changes 为空)[/]")
+                tracker.mark_lost(top_b.id, "solver produced no file changes")
+            else:
+                tracker.mark_solved(top_b.id)
+                console.print(f"   [green]✓ 生成 {len(solution.file_changes)} 个文件变更[/]")
+                if solution.explanation:
+                    console.print(f"   [dim]{solution.explanation[:100]}[/]")
+                for fc in solution.file_changes:
+                    console.print(f"     [{fc.action}] {fc.path} ({len(fc.content)} chars)")
+
+                # Deliver
+                if dry_run:
+                    console.print(f"\n   [bold]→ Deliver (dry-run)[/]")
+                    console.print(f"   [dim]将修改 {len(solution.file_changes)} 个文件[/]")
+                    console.print(f"   [dim]将运行: {solution.file_changes[0].test_command if solution.file_changes[0].test_command else '(无测试)'}[/]")
+                else:
+                    console.print(f"\n   [bold yellow]→ Deliver[/] 提 PR 中...")
+                    deliverer = PRDeliverer()
+                    result = deliverer.deliver(
+                        repo=top_b.repo,
+                        issue_url=top_b.issue_url,
+                        changes=[
+                            {"path": fc.path, "action": fc.action,
+                             "content": fc.content, "test_command": fc.test_command}
+                            for fc in solution.file_changes
+                        ],
+                        title=top_b.title,
+                        description=f"Closes {top_b.issue_url}\n\n{solution.explanation}",
+                    )
+
+                    if result.success:
+                        tracker.mark_delivered(top_b.id, result.pr_url)
+                        console.print(f"   [green]✓ PR 已提交: {result.pr_url}[/]")
+                        console.print(f"   [green]  分支: {result.branch}[/]")
+                    else:
+                        tracker.mark_lost(top_b.id, f"deliver error: {result.error}")
+                        console.print(f"   [red]✗ Deliver 失败: {result.error}[/]")
+
+        except Exception as e:
+            console.print(f"   [red]✗ 执行异常: {e}[/]")
+            tracker.mark_lost(top_b.id, f"exception: {e}")
+
+    # 5. Auto-reconcile delivered PRs
+    if not dry_run:
+        console.print(f"\n[bold cyan]5. 自动对账[/] 检查已交付 PR 状态...")
+        reconciled = tracker.auto_reconcile()
+        console.print(f"   已检查 {reconciled} 个待确认 PR")
+
+    # 6. Dashboard
+    console.print(f"\n[bold cyan]6. 收益仪表盘:[/]")
     console.print(tracker.dashboard())
+
+    if not auto_deliver:
+        console.print(f"\n[dim]提示: python forager.py --forage --auto 启动自动执行模式[/]")
 
 
 if __name__ == "__main__":
@@ -440,6 +527,8 @@ if __name__ == "__main__":
     p.add_argument("--once", action="store_true", help="抓一次就退出")
     p.add_argument("--digest", action="store_true", help="只看摘要")
     p.add_argument("--forage", action="store_true", help="完整觅食循环")
+    p.add_argument("--auto", action="store_true", help="(配合--forage) 自动执行 solve→deliver")
+    p.add_argument("--dry-run", action="store_true", help="(配合--forage) 生成代码但不提PR")
     p.add_argument("--dashboard", action="store_true", help="收益仪表盘")
     p.add_argument("--hours", type=int, default=24, help="摘要时间窗口(小时)")
     p.add_argument("--interval", type=int, default=30, help="守护模式间隔(分钟)")
@@ -451,7 +540,7 @@ if __name__ == "__main__":
         t = EarningTracker()
         console.print(t.dashboard())
     elif args.forage:
-        cmd_forage(s)
+        cmd_forage(s, auto_deliver=args.auto, dry_run=args.dry_run)
     elif args.digest:
         show_digest(get_db(), hours=args.hours)
     elif args.once:

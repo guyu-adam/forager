@@ -196,18 +196,32 @@ def fetch_gitcoin() -> list[Bounty]:
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _extract_amount(text: str) -> Optional[float]:
-    """从标题/正文中提取赏金金额"""
-    # [$500], $500 USD, 500 USDC, bounty $200
-    patterns = [
-        r'\[\$(\d+(?:,\d{3})*(?:\.\d+)?)\]',
-        r'\$(\d+(?:,\d{3})*(?:\.\d+)?)\s*(?:USD|USDC|USDT)',
-        r'(?:bounty|reward).*?\$(\d+(?:,\d{3})*(?:\.\d+)?)',
-        r'\$(\d+(?:,\d{3})*(?:\.\d+)?)\s*(?:bounty|reward)',
-    ]
-    for pat in patterns:
-        m = re.search(pat, text, re.I)
-        if m:
-            return float(m.group(1).replace(",", ""))
+    """从标题/正文中提取赏金金额, 支持 $8k / $500 / 500 USDC 等格式"""
+    # $8k / $8.5k 格式
+    m = re.search(r'\$(\d+(?:\.\d+)?)\s*k', text, re.I)
+    if m:
+        return float(m.group(1)) * 1000
+
+    # [$500] / [$1,200] 格式
+    m = re.search(r'\[\s*\$(\d+(?:,\d{3})*(?:\.\d+)?)\s*\]', text)
+    if m:
+        return float(m.group(1).replace(",", ""))
+
+    # $500 USD / $500 USDC / $500 bounty 格式
+    m = re.search(r'\$(\d+(?:,\d{3})*(?:\.\d+)?)\s*(?:USD|USDC|USDT|bounty|reward)', text, re.I)
+    if m:
+        return float(m.group(1).replace(",", ""))
+
+    # bounty $500 / reward $500
+    m = re.search(r'(?:bounty|reward)\s*\$(\d+(?:,\d{3})*(?:\.\d+)?)', text, re.I)
+    if m:
+        return float(m.group(1).replace(",", ""))
+
+    # 裸 $500 (至少3位数, 避免匹配 $5 这种金额指示)
+    m = re.search(r'\$(\d{3,}(?:,\d{3})*(?:\.\d+)?)', text)
+    if m:
+        return float(m.group(1).replace(",", ""))
+
     return None
 
 

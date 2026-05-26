@@ -127,18 +127,29 @@ class Scorer:
         pay_hits_t2 = sum(1 for k in self.PAY_TIER2 if k in text)
         pay_hits_t3 = sum(1 for k in self.PAY_TIER3 if k in text)
         result.pay = min(10, pay_hits_t1 * 4 + pay_hits_t2 * 2 + pay_hits_t3)
-        # 美元赏金加分: [$N] 或 bounty $N 格式
+        # 美元赏金加分: 支持 $8k / $500 / [$1,200] / bounty $200 等格式
         import re as _re
-        usd_match = _re.search(r'(?:bounty\s*)?\[\s*\$(\d+(?:,\d{3})*(?:\.\d+)?)\s*\]|\$\s*(\d+(?:,\d{3})*(?:\.\d+)?)\s*(?:bounty|usd)', text, _re.I)
-        if usd_match:
-            amount = usd_match.group(1) or usd_match.group(2)
-            if amount:
-                amt = float(amount.replace(",", ""))
-                if amt >= 1000:   result.pay = min(10, result.pay + 4)
-                elif amt >= 500:  result.pay = min(10, result.pay + 3)
-                elif amt >= 100:  result.pay = min(10, result.pay + 2)
-                else:             result.pay = min(10, result.pay + 1)
-                result.price_hint = f"${amt:.0f}"
+        # $8k / $8.5k 格式
+        km = _re.search(r'\$(\d+(?:\.\d+)?)\s*k', text, _re.I)
+        if km:
+            amt = float(km.group(1)) * 1000
+            result.pay = min(10, result.pay + 4 if amt >= 1000 else (3 if amt >= 500 else 2))
+            result.price_hint = f"${amt:.0f}"
+        else:
+            usd_match = _re.search(
+                r'(?:bounty\s*)?\[\s*\$(\d+(?:,\d{3})*(?:\.\d+)?)\s*\]\s*|'
+                r'\$\s*(\d+(?:,\d{3})*(?:\.\d+)?)\s*(?:bounty|usd|USD)',
+                text, _re.I
+            )
+            if usd_match:
+                amount = usd_match.group(1) or usd_match.group(2)
+                if amount:
+                    amt = float(amount.replace(",", ""))
+                    if amt >= 1000:   result.pay = min(10, result.pay + 4)
+                    elif amt >= 500:  result.pay = min(10, result.pay + 3)
+                    elif amt >= 100:  result.pay = min(10, result.pay + 2)
+                    else:             result.pay = min(10, result.pay + 1)
+                    result.price_hint = f"${amt:.0f}"
 
         # ── 技术匹配 (0-10) ──
         tech_hits = sum(1 for k in self.TECH_KEYWORDS if k in text)
@@ -177,7 +188,8 @@ class Scorer:
         )
 
         # ── 价格估时 ──
-        result.price_hint = self._estimate_price(text)
+        if not result.price_hint:
+            result.price_hint = self._estimate_price(text)
         result.estimated_minutes = self._estimate_minutes(text)
 
         if not result.reasons:

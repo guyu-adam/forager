@@ -1,0 +1,7 @@
+{
+  "files_to_modify": ["src/{{module}}/{{file}}"],
+  "approach": "bug_fix",
+  "estimated_loc": 20,
+  "risk_level": "low",
+  "test_strategy": "add test case reproducing the bug, verify fix passes"
+}

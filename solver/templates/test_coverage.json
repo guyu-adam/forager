@@ -1,0 +1,7 @@
+{
+  "files_to_modify": ["tests/{{test_file}}"],
+  "approach": "add_tests",
+  "estimated_loc": 50,
+  "risk_level": "low",
+  "test_strategy": "add test cases covering happy path, edge cases, and error handling"
+}

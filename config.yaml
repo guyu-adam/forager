@@ -1,0 +1,77 @@
+# Forager Configuration
+# 全局配置 — API keys, 模型选择, 成本控制, 通知设置
+
+# ── GitHub ──────────────────────────────────────────────────────
+github:
+  # Personal Access Token (repo scope) — 用于搜索/PR/评论
+  token: ${GITHUB_TOKEN}
+  # 搜索速率控制 (请求/秒)
+  rate_limit: 1.0
+
+# ── Bounty Sources ──────────────────────────────────────────────
+sources:
+  algora: true      # GitHub issues labeled "💎 Bounty"
+  opire: true       # api.opire.dev
+  collab: true      # collaborators.build
+  expensify: true   # GitHub issues with [$amount] in title
+  gitcoin: false    # Web3 bounties (需要单独配置)
+  v2ex: true        # V2EX RSS + DDG 搜索
+  zhihu: false      # 知乎搜索 (反爬严格, 默认关闭)
+  xianyu: false     # 闲鱼 (无法自动化交付, 默认关闭)
+
+# ── Solver (解决引擎) ───────────────────────────────────────────
+solver:
+  # 最大 API 成本 / 赏金额 (上限15%, 建议10%)
+  max_cost_ratio: 0.10
+  # 自动提 PR 的最低置信度 (0-1)
+  min_confidence: 0.75
+  # 低于此分数的需求进人工审核队列
+  review_threshold: 0.6
+  # 沙箱模式 (强制 Docker)
+  sandbox: false
+  # 单次最多尝试解决的 bounty 数
+  max_per_cycle: 1
+
+# ── Models ──────────────────────────────────────────────────────
+models:
+  # 本地模型 ($0 cost)
+  local:
+    name: qwen3.5:4b
+    endpoint: http://localhost:11434
+    max_tokens: 600
+  # 廉价云模型
+  cheap:
+    provider: deepseek
+    model: deepseek-chat
+    api_key: ${DEEPSEEK_API_KEY}
+    max_tokens: 2000
+  # 高质量模型 (高风险任务)
+  premium:
+    provider: anthropic
+    model: claude-sonnet-4-6
+    api_key: ${ANTHROPIC_API_KEY}
+    max_tokens: 4000
+
+# ── Scoring Weights ─────────────────────────────────────────────
+scoring:
+  weights:
+    pay:          0.30    # 付费意愿
+    tech_match:   0.20    # 技术匹配度
+    solvability:  0.30    # AI 可解决性
+    saturation:   0.20    # 竞争反比
+
+# ── Notifications ───────────────────────────────────────────────
+notifications:
+  telegram:
+    enabled: false
+    bot_token: ${TELEGRAM_BOT_TOKEN}
+    chat_id: ${TELEGRAM_CHAT_ID}
+  webhook:
+    enabled: false
+    url: ${NOTIFY_WEBHOOK_URL}
+
+# ── Paths ───────────────────────────────────────────────────────
+paths:
+  db: demands.db
+  log: forager.log
+  solver_templates: solver/templates

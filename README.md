@@ -1,137 +1,144 @@
-# demand-radar
+# Forager — AI 驱动的开源赏金觅食者
 
-**实时监控 V2EX、知乎、GitHub、闲鱼上的付费技术需求，帮你第一时间找到真实外包订单。无需 AI API，纯确定性评分。**
+**Find → Solve → Deliver → Earn**
 
-**Real-time monitor for paid tech task requests on V2EX, Zhihu, GitHub, and Xianyu. Find real freelance orders before anyone else. No AI API required — pure deterministic scoring.**
+自动发现 GitHub 赏金 + V2EX 付费需求, AI 解决, 自动提 PR, 收钱。
 
 ---
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://python.org)
-[![No API Key](https://img.shields.io/badge/API%20key-none%20required-brightgreen.svg)](demand_radar.py)
-[![Sources: 4](https://img.shields.io/badge/sources-4%20platforms-orange.svg)](demand_radar.py)
-[![DB: SQLite](https://img.shields.io/badge/storage-SQLite-lightgrey.svg)](demand_radar.py)
+[![No API Key Required](https://img.shields.io/badge/API%20key-none%20required-brightgreen.svg)](forager.py)
+[![Sources: 9](https://img.shields.io/badge/sources-9%20platforms-orange.svg)](#)
+[![DB: SQLite](https://img.shields.io/badge/storage-SQLite-lightgrey.svg)](#)
 
 ---
 
-## 解决什么问题 / The Problem
+## 解决什么问题
 
-技术人想接外包，但需求散落在各个平台，手动刷帖效率极低。demand-radar 7×24 自动抓取，按付费意愿和技术匹配度打分排序，每次只看高分帖。
+技术人想用 AI 赚钱, 但:
+1. 不知道哪里有付费需求
+2. 找到了不知道怎么高效解决
+3. 解决了不知道怎么自动交付
 
-Tech freelancers waste hours manually browsing platforms for paid work. demand-radar crawls 4 platforms continuously, scores every post by pay intent and tech relevance, and surfaces only the high-value ones.
+**Forager 是一条完整的流水线**: 发现赏金 → AI 解决 → 自动提 PR → 记录收益。
 
 ---
 
-## 监控平台 / Monitored Sources
+## 商业闭环
 
-| 平台 / Platform | 抓取方式 / Method | 更新频率 / Frequency |
+```
+  发现 (Find)       解决 (Solve)       交付 (Deliver)      收钱 (Earn)
+ ┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
+ │ 9个数据源 │ ──→ │ AI 引擎  │ ──→ │ 自动 PR  │ ──→ │ 收益记录 │
+ │ 智能评分 │     │ 成本控制 │     │ 状态跟踪 │     │ 仪表盘   │
+ └──────────┘     └──────────┘     └──────────┘     └──────────┘
+```
+
+---
+
+## 数据源
+
+| 类型 | 平台 | 说明 |
 |---|---|---|
-| **V2EX** | RSS + DuckDuckGo 搜索 | 每轮每次 |
-| **知乎** | 公开搜索接口 | 每轮每次 |
-| **GitHub Issues** | GitHub Search API | 每轮每次（`is:bounty` / `is:paid` 标签） |
-| **闲鱼** | 公开搜索结果页 | 每轮每次 |
+| **赏金平台** | Algora, Opire, Collaborators.build, Expensify, Gitcoin | 标准化的 GitHub bounty, 含金额 |
+| **社区** | V2EX (RSS + DDG), 知乎, 闲鱼 | 中文技术外包需求 |
+| **GitHub** | `good first issue` + `bounty` 标签 | 开源项目赏金 |
 
 ---
 
-## 评分逻辑 / Scoring
+## 评分引擎
 
-每篇帖子从两个维度打分（满分各 5 分，合计 10 分）：
+四维评分 (每维 0-10):
 
-Each post is scored on two dimensions (max 5 each, total 10):
+| 维度 | 权重 | 说明 |
+|---|---|---|
+| **付费意愿** | 30% | 关键词分层匹配 (有偿/悬赏/bounty/$ 等) |
+| **技术匹配** | 20% | 全栈关键词覆盖 (Python/React/爬虫/AI 等) |
+| **可解决性** | 30% | AI 能否自动化解决 (硬阻断检测 + 自动友好信号) |
+| **竞争反比** | 20% | 已有竞争者数量, 废弃赏金加分 |
 
-**付费意愿 / Pay intent keywords**
-```
-有偿, 付费, 悬赏, 求外包, 有报酬, bounty, paid, hire, contract, freelance...
-```
-
-**技术匹配 / Tech stack keywords**
-```
-Python, 爬虫, 数据分析, 自动化, API, 量化, AI, 机器学习, Node.js, Docker...
-```
-
-只展示合计分数 ≥ 3 的帖子，避免噪音。  
-Only posts with total score ≥ 3 are shown, filtering noise.
+总分 ≥ 6.0 可尝试自动解决, ≥ 4.0 进入人工审核。
 
 ---
 
-## 实测输出 / Live Output Sample
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  demand-radar  ·  2026-05-12 06:50  ·  扫描 4 平台 / 4 platforms    │
-├──────┬─────────┬──────────────────────────────────────────┬─────────┤
-│ 分数 │ 平台    │ 标题                                      │ 时间    │
-├──────┼─────────┼──────────────────────────────────────────┼─────────┤
-│  8/10│ V2EX   │ [有偿] 求 Python 爬虫帮忙抓某网站数据      │ 10m ago │
-│  7/10│ GitHub │ [Bounty $200] Add async support to SDK    │ 23m ago │
-│  7/10│ 知乎   │ 有偿求助：量化策略回测代码优化             │ 1h ago  │
-│  6/10│ 闲鱼   │ 招 Python 自动化脚本开发，500元           │ 2h ago  │
-│  6/10│ V2EX   │ 求外包：微信小程序 + 后端 API 开发        │ 3h ago  │
-└──────┴─────────┴──────────────────────────────────────────┴─────────┘
-本轮新增 5 条  ·  数据库共 128 条  ·  下次扫描 15min 后
-```
-
----
-
-## 快速开始 / Quick Start
+## 快速开始
 
 ```bash
-git clone https://github.com/guyu-adam/demand-radar.git
-cd demand-radar
+git clone https://github.com/guyu-adam/forager.git
+cd forager
 pip install -r requirements.txt
 
-# 单次扫描 / Single scan
-python demand_radar.py --once
+# 单次扫描
+python forager.py --once
 
-# 持续监控（默认 15min 间隔）/ Continuous monitor (default 15min)
-python demand_radar.py
+# 持续监控 (30min 间隔)
+python forager.py
 
-# 后台运行 / Background daemon
+# 完整觅食循环 (scan → score → top5)
+python forager.py --forage
+
+# 收益仪表盘
+python forager.py --dashboard
+
+# 后台运行
 bash run.sh
 ```
 
 ---
 
-## 配置 / Configuration
+## 项目结构
 
-在 `demand_radar.py` 顶部修改关键词：
-
-```python
-PAY_KEYWORDS = ["有偿", "付费", "悬赏", "bounty", "paid", "hire", ...]
-TECH_KEYWORDS = ["Python", "爬虫", "数据分析", "自动化", "API", ...]
-SCAN_INTERVAL = 900   # 秒 / seconds between scans
-MIN_SCORE     = 3     # 最低展示分数 / minimum display score
+```
+forager/
+  forager.py             主入口 — 定时扫描 + 显示
+  bounty_aggregator.py    多平台赏金聚合
+  scorer.py              四维评分引擎
+  solver/
+    __init__.py           Planner → Coder → Tester → Packager
+    engine.py             AI 解决引擎主控
+  deliverer.py            GitHub PR 自动交付 + 状态跟踪
+  earning_tracker.py      收益记录 + 月度仪表盘
+  gpu_earner.py           GPU 赚钱调度器 (Vast.ai + Forager + LLM)
+  config.yaml             全局配置
+  run.sh                  启动脚本
 ```
 
 ---
 
-## 数据存储 / Storage
+## 反饱和策略
 
-所有抓到的帖子存入本地 SQLite（`demand_radar.db`），字段包括：
-
-```
-id · platform · title · url · score_pay · score_tech · score_total · created_at · seen
-```
-
-可用 `sqlite-utils` 或任意 SQL 工具查询历史。
-
----
-
-## 为什么不用 AI API / Why No AI
-
-- 延迟更低：确定性打分 < 5ms，API 调用需要 500ms+
-- 无成本：不烧 OpenAI / Claude token
-- 离线运行：断网也能用
-- 可解释：每个分数都能追溯到具体关键词命中
-
-Deterministic scoring is faster (<5ms vs 500ms+ for API), free, offline-capable, and fully explainable.
+| 策略 | 说明 | 优先级 |
+|---|---|---|
+| **废弃赏金收割** | 14+ 天无 PR 的 bounty → 你上 | P0 |
+| **零竞争窗口** | 冷门时段发布, 0-2 竞争者 | P1 |
+| **深水区专精** | 只做 Python/爬虫/自动化/数据处理 | P1 |
+| **小额快反** | $10-50 微赏金, 大号看不上 | P2 |
 
 ---
 
-## 配合 Miser 使用 / Works Great with Miser
+## 成本控制
 
-如果你用 Claude Code，可以用 [Miser](https://github.com/guyu-adam/miser) 把 demand-radar 的输出摘要交给本地 LLM 做进一步筛选，不花 API token。
+| 模型 | 用途 | 成本 |
+|---|---|---|
+| Ollama (qwen3.5:4b) | 代码补全, 简单 fix | $0 |
+| DeepSeek | 计划生成, 复杂逻辑 | ~$0.01/次 |
+| Claude | 高风险任务 (人工审核) | ~$0.15/次 |
 
-Pair with [Miser](https://github.com/guyu-adam/miser) to let a local LLM further filter results without spending API tokens.
+**硬限制**: 单次解决 API 成本 < 赏金额的 10%。
+
+---
+
+## 配合 Miser 使用
+
+Forager 的 solve 层默认使用本地 Miser (localhost:7860) 做代码生成, 零 API 成本。
+
+```bash
+# 先启动 Miser
+cd ~/miser && nohup python3 miser.py &
+
+# 再跑 Forager
+cd ~/forager && python forager.py --forage
+```
 
 ---
 
